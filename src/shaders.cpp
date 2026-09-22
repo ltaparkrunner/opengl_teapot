@@ -32,4 +32,5 @@ float lightCubeVertices[] = {
      0.1f,  0.1f,  0.1f, -0.1f,  0.1f,  0.1f, -0.1f,  0.1f, -0.1f
 };
 
-const int cubeVertsize = sizeof(lightCubeVertices)/sizeof(float);
+const int cubeVertSize = sizeof(lightCubeVertices)/sizeof(float);
+int sizeof_lightCubeVertices = sizeof(lightCubeVertices);

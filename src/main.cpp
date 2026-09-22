@@ -16,7 +16,9 @@
 #include "shader.h"
 
 const GLuint WIDTH = 800, HEIGHT = 600;
-// float lightCubeVertices[];
+extern float lightCubeVertices[];
+extern const int cubeVertSize;
+extern int sizeof_lightCubeVertices;
 
 // Структура вершины для VBO
 struct Vertex {
@@ -131,6 +133,28 @@ int main() {
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
 
+    // 1. Компилируем шейдеры для лампочки (используя вашу функцию чтения файлов)
+    std::string lightVertCode = get_file_contents("shaders/lightCube.vert");
+    std::string lightFragCode = get_file_contents("shaders/lightCube.frag");
+    const char* lightVertSource = lightVertCode.c_str();
+    const char* lightFragSource = lightFragCode.c_str();
+
+
+    GLuint lightVertShader = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(lightVertShader, 1, &lightVertSource, nullptr);
+    glCompileShader(lightVertShader);
+
+    GLuint lightFragShader = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(lightFragShader, 1, &lightFragSource, nullptr);
+    glCompileShader(lightFragShader);
+
+    GLuint lightShader = glCreateProgram();
+    glAttachShader(lightShader, lightVertShader);
+    glAttachShader(lightShader, lightFragShader);
+    glLinkProgram(lightShader);
+    glDeleteShader(lightVertShader);
+    glDeleteShader(lightFragShader);
+
     // Загрузка чайника
     std::vector<Vertex> vertices;
     std::vector<unsigned int> indices;
@@ -163,6 +187,20 @@ int main() {
 
     glBindVertexArray(0);
 
+    // 2. Настраиваем VAO и VBO для светящегося куба
+    GLuint lightVAO, lightVBO;
+    glGenVertexArrays(1, &lightVAO);
+    glGenBuffers(1, &lightVBO);
+
+    glBindVertexArray(lightVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, lightVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof_lightCubeVertices, lightCubeVertices, GL_STATIC_DRAW);
+
+    // Нам нужны только координаты (layout = 0), нормали для светящегося куба не нужны
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    glBindVertexArray(0);
+
     // ID юниформ-переменных для матриц
     GLint modelLoc = glGetUniformLocation(shaderProgram, "model");
     GLint viewLoc  = glGetUniformLocation(shaderProgram, "view");
@@ -174,31 +212,58 @@ int main() {
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
 
-        glClearColor(0.12f, 0.12f, 0.12f, 1.0f);
+        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+        // ВРЕМЯ И МАТЕМАТИКА ДВИЖЕНИЯ СВЕТА
+        float time = glfwGetTime();
+        // Свет летает по кругу в плоскости XZ с радиусом 3.5 и на высоте 2.0
+        glm::vec3 lightPosition(sin(time) * 3.5f, 2.0f, cos(time) * 3.5f);
+        glm::vec3 cameraPosition(0.0f, 0.0f, 5.0f);
+
+        // Общие матрицы проекции и вида
+        glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)WIDTH / (float)HEIGHT, 0.1f, 100.0f);
+        glm::mat4 view = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -1.0f, -6.0f));
+
+        // ==========================================
+        // 1. ОТРИСОВКА ЧАЙНИКА (С ШЕЙДЕРОМ ФАРФОРА)
+        // ==========================================
         glUseProgram(shaderProgram);
 
-        // Матрица Проекции (Перспектива)
-        glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)WIDTH / (float)HEIGHT, 0.1f, 100.0f);
-        // Матрица Вида (Камера отодвинута назад)
-        glm::mat4 view = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -1.0f, -5.0f));
-        // Матрица Модели (Вращение чайника)
-        glm::mat4 model = glm::rotate(glm::mat4(1.0f), glm::radians(angle), glm::vec3(0.0f, 1.0f, 0.0f));
+        // Передаем матрицы
+        glm::mat4 modelTeapot = glm::rotate(glm::mat4(1.0f), glm::radians(angle), glm::vec3(0.0f, 1.0f, 0.0f));
+        modelTeapot = glm::scale(modelTeapot, glm::vec3(0.5f)); 
         
-        // Масштабируем чайник, если он слишком большой или маленький в вашем файле
-        model = glm::scale(model, glm::vec3(0.5f)); 
+        glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
+        glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "view"), 1, GL_FALSE, glm::value_ptr(view));
+        glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, glm::value_ptr(modelTeapot));
 
-        glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
-        glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+        // Передаем динамические векторы света и камеры
+        glUniform3fv(glGetUniformLocation(shaderProgram, "lightPos"), 1, glm::value_ptr(lightPosition));
+        glUniform3fv(glGetUniformLocation(shaderProgram, "viewPos"), 1, glm::value_ptr(cameraPosition));
 
-        angle += 0.4f;
-
-        // Рисуем чайник
+        // Отрисовка
         glBindVertexArray(VAO);
         glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
-        glBindVertexArray(0);
+
+        // ==========================================
+        // 2. ОТРИСОВКА ЛАМПОЧКИ (СВЕТЯЩЕГОСЯ КУБА)
+        // ==========================================
+        glUseProgram(lightShader);
+
+        // Матрица модели для куба: сдвигаем его в текущую точку lightPosition
+        glm::mat4 modelLight = glm::translate(glm::mat4(1.0f), lightPosition);
+
+        glUniformMatrix4fv(glGetUniformLocation(lightShader, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
+        glUniformMatrix4fv(glGetUniformLocation(lightShader, "view"), 1, GL_FALSE, glm::value_ptr(view));
+        glUniformMatrix4fv(glGetUniformLocation(lightShader, "model"), 1, GL_FALSE, glm::value_ptr(modelLight));
+
+        // Отрисовка куба (у него 36 вершин)
+        glBindVertexArray(lightVAO);
+        glDrawArrays(GL_TRIANGLES, 0, 36); 
+
+        // Медленно вращаем сам чайник для динамики
+        angle += 0.1f; 
 
         glfwSwapBuffers(window);
     }
@@ -207,6 +272,11 @@ int main() {
     glDeleteBuffers(1, &VBO);
     glDeleteBuffers(1, &EBO);
     glDeleteProgram(shaderProgram);
+
+    // Освобождаем ресурсы лампочки
+    glDeleteVertexArrays(1, &lightVAO);
+    glDeleteBuffers(1, &lightVBO);
+    glDeleteProgram(lightShader);
 
     glfwTerminate();
     return 0;
