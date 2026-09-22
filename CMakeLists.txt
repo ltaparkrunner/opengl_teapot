@@ -21,6 +21,7 @@ find_package(Threads REQUIRED)
 set(SOURCE_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/libraries/src/glad.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders.cpp
 )
 
 # 5. Define the executable output
@@ -43,3 +44,5 @@ target_link_libraries(${PROJECT_NAME}
     ${CMAKE_THREAD_LIBS_INIT}
     X11
 )
+
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/shaders DESTINATION ${CMAKE_CURRENT_BINARY_DIR})

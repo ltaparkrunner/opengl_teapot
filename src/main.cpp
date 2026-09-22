@@ -13,54 +13,16 @@
 #include <vector>
 #include <string>
 
+#include "shader.h"
+
 const GLuint WIDTH = 800, HEIGHT = 600;
+// float lightCubeVertices[];
 
 // Структура вершины для VBO
 struct Vertex {
     glm::vec3 position;
     glm::vec3 normal;
 };
-
-// Простейшие шейдеры с поддержкой освещения (диффузный свет Ламберта)
-const GLchar* vertexShaderSource = R"(
-    #version 330 core
-    layout (location = 0) in vec3 aPos;
-    layout (location = 1) in vec3 aNormal;
-
-    out vec3 FragPos;
-    out vec3 Normal;
-
-    uniform mat4 model;
-    uniform mat4 view;
-    uniform mat4 projection;
-
-    void main() {
-        FragPos = vec3(model * vec4(aPos, 1.0));
-        // Вычисляем матрицу нормалей, чтобы они не искажались при масштабировании
-        Normal = mat3(transpose(inverse(model))) * aNormal;  
-        gl_Position = projection * view * model * vec4(aPos, 1.0);
-    }
-)";
-
-const GLchar* fragmentShaderSource = R"(
-    #version 330 core
-    out vec4 FragColor;
-
-    in vec3 FragPos;
-    in vec3 Normal;
-
-    void main() {
-        // Простейшее освещение
-        vec3 norm = normalize(Normal);
-        vec3 lightDir = normalize(vec3(5.0, 10.0, 5.0) - FragPos); // Источник света сверху-сбоку
-        
-        float diff = max(dot(norm, lightDir), 0.0);
-        vec3 diffuse = diff * vec3(0.2, 0.6, 0.6); // Бирюзовый цвет чайника
-        vec3 ambient = vec3(0.1, 0.1, 0.1);        // Фоновый свет
-
-        FragColor = vec4(ambient + diffuse, 1.0);
-    }
-)";
 
 // Функция парсинга .obj файла (загружает только позиции и нормали)
 bool loadOBJ(const std::string& path, std::vector<Vertex>& out_vertices, std::vector<unsigned int>& out_indices) {
@@ -148,6 +110,12 @@ int main() {
     glEnable(GL_DEPTH_TEST);
 
     // Шейдерная программа
+    std::string vertexCode = get_file_contents("shaders/default.vert");
+    std::string fragmentCode = get_file_contents("shaders/default.frag");
+
+    const char* vertexShaderSource = vertexCode.c_str();
+    const char* fragmentShaderSource = fragmentCode.c_str();
+
     GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vertexShader, 1, &vertexShaderSource, nullptr);
     glCompileShader(vertexShader);
