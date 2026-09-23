@@ -202,11 +202,22 @@ int main() {
     glBindVertexArray(0);
 
     // ID юниформ-переменных для матриц
-    GLint modelLoc = glGetUniformLocation(shaderProgram, "model");
-    GLint viewLoc  = glGetUniformLocation(shaderProgram, "view");
-    GLint projLoc  = glGetUniformLocation(shaderProgram, "projection");
+    // GLint modelLoc = glGetUniformLocation(shaderProgram, "model");
+    // GLint viewLoc  = glGetUniformLocation(shaderProgram, "view");
+    // GLint projLoc  = glGetUniformLocation(shaderProgram, "projection");
 
     float angle = 0.0f;
+
+    // Вызываем строго ПОСЛЕ финальной линковки shaderProgram
+    GLint projLoc  = glGetUniformLocation(shaderProgram, "projection");
+    GLint viewLoc  = glGetUniformLocation(shaderProgram, "view");
+    GLint modelLoc = glGetUniformLocation(shaderProgram, "model");
+    GLint lightLoc = glGetUniformLocation(shaderProgram, "lightPos");
+    GLint camLoc   = glGetUniformLocation(shaderProgram, "viewPos");
+
+    // ВАЖНО: Добавим проверку. Если в консоль выведется ошибка — значит С++ не видит переменные в шейдере!
+    if (lightLoc == -1) std::cerr << "КРИТИЧЕСКАЯ ОШИБКА: lightPos не найден в шейдере!" << std::endl;
+    if (camLoc == -1)   std::cerr << "КРИТИЧЕСКАЯ ОШИБКА: viewPos не найден в шейдере!" << std::endl;
 
     // Главный цикл рендеринга
     while (!glfwWindowShouldClose(window)) {
@@ -219,29 +230,48 @@ int main() {
         float time = glfwGetTime();
         // Свет летает по кругу в плоскости XZ с радиусом 3.5 и на высоте 2.0
         glm::vec3 lightPosition(sin(time) * 3.5f, 2.0f, cos(time) * 3.5f);
-        glm::vec3 cameraPosition(0.0f, 0.0f, 5.0f);
+        // glm::vec3 cameraPosition(0.0f, 0.0f, 5.0f);
+
+        // // Общие матрицы проекции и вида
+        // glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)WIDTH / (float)HEIGHT, 0.1f, 100.0f);
+        // glm::mat4 view = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -1.0f, -6.0f));
 
         // Общие матрицы проекции и вида
         glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)WIDTH / (float)HEIGHT, 0.1f, 100.0f);
+        // Камера физически находится в точке (0.0, 1.0, 6.0), так как матрица view сдвигает мир в обратную сторону
         glm::mat4 view = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -1.0f, -6.0f));
+        glm::vec3 cameraPosition(0.0f, 1.0f, 6.0f); 
 
         // ==========================================
         // 1. ОТРИСОВКА ЧАЙНИКА (С ШЕЙДЕРОМ ФАРФОРА)
         // ==========================================
+        // glUseProgram(shaderProgram);
+
+        // // Передаем матрицы
+        // glm::mat4 modelTeapot = glm::rotate(glm::mat4(1.0f), glm::radians(angle), glm::vec3(0.0f, 1.0f, 0.0f));
+        // modelTeapot = glm::scale(modelTeapot, glm::vec3(0.5f)); 
+        
+        // glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
+        // glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "view"), 1, GL_FALSE, glm::value_ptr(view));
+        // glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, glm::value_ptr(modelTeapot));
+
+        // // Передаем динамические векторы света и камеры
+        // glUniform3fv(glGetUniformLocation(shaderProgram, "lightPos"), 1, glm::value_ptr(lightPosition));
+        // glUniform3fv(glGetUniformLocation(shaderProgram, "viewPos"), 1, glm::value_ptr(cameraPosition));
+
         glUseProgram(shaderProgram);
 
-        // Передаем матрицы
+        // Передаем матрицы по их заранее сохраненным ID (это быстрее и надежнее)
         glm::mat4 modelTeapot = glm::rotate(glm::mat4(1.0f), glm::radians(angle), glm::vec3(0.0f, 1.0f, 0.0f));
         modelTeapot = glm::scale(modelTeapot, glm::vec3(0.5f)); 
-        
-        glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
-        glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "view"), 1, GL_FALSE, glm::value_ptr(view));
-        glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, glm::value_ptr(modelTeapot));
+
+        glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
+        glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(modelTeapot));
 
         // Передаем динамические векторы света и камеры
-        glUniform3fv(glGetUniformLocation(shaderProgram, "lightPos"), 1, glm::value_ptr(lightPosition));
-        glUniform3fv(glGetUniformLocation(shaderProgram, "viewPos"), 1, glm::value_ptr(cameraPosition));
-
+        glUniform3fv(lightLoc, 1, glm::value_ptr(lightPosition));
+        glUniform3fv(camLoc, 1, glm::value_ptr(cameraPosition));
         // Отрисовка
         glBindVertexArray(VAO);
         glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
