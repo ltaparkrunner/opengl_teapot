@@ -15,6 +15,8 @@
 
 #include "shader.h"
 #include <glm/gtx/string_cast.hpp>
+#include <unordered_map>
+#include <glm/gtx/hash.hpp>
 
 const GLuint WIDTH = 800, HEIGHT = 600;
 extern float lightCubeVertices[];
@@ -27,105 +29,76 @@ struct Vertex {
     glm::vec3 normal;
 };
 
-// Функция парсинга .obj файла (загружает только позиции и нормали)
-bool loadOBJ(const std::string& path, std::vector<Vertex>& out_vertices, std::vector<unsigned int>& out_indices) {
+bool loadTeapotOBJ(const std::string& path, std::vector<Vertex>& outVertices, std::vector<unsigned int>& outIndices) {
     std::ifstream file(path);
     if (!file.is_open()) {
         std::cerr << "Не удалось открыть файл: " << path << std::endl;
         return false;
     }
-
     std::vector<glm::vec3> temp_positions;
-    std::vector<glm::vec3> temp_normals;
-
     std::string line;
+
+    // 1. Первый проход или построчное чтение сырых данных
     while (std::getline(file, line)) {
         std::stringstream ss(line);
         std::string type;
         ss >> type;
 
-        if (type == "v") { // Геометрическая вершина
+        if (type == "v") { // Точка геометрии
             glm::vec3 pos;
             ss >> pos.x >> pos.y >> pos.z;
             temp_positions.push_back(pos);
         } 
-        else if (type == "vn") { // Вектор нормали
-            glm::vec3 norm;
-            ss >> norm.x >> norm.y >> norm.z;
-            temp_normals.push_back(norm);
-        } 
-        else if (type == "f") { // Грань (Полигон)
-            // Формат в .obj обычно такой: f v1/vt1/vn1 v2/vt2/vn2 v3/vt3/vn3
-            // Нам нужны только индексы вершин (v) и нормалей (vn)
-            for (int i = 0; i < 3; ++i) {
-                std::string vertexStr;
-                ss >> vertexStr;
+        else if (type == "f") { // Грань (Face)
+            // Допустим, в вашем obj простые индексы без текстур (например: f 1 2 3)
+            unsigned int idx1, idx2, idx3;
+            ss >> idx1 >> idx2 >> idx3;
 
-                std::replace(vertexStr.begin(), vertexStr.end(), '/', ' ');
-                std::stringstream vertexSS(vertexStr);
-                
-                unsigned int vIdx = 0, tIdx = 0, nIdx = 0;
-                vertexSS >> vIdx;
-                
-                // Проверяем, есть ли текстурные координаты или сразу идет нормаль (v//vn)
-                if (vertexStr.find("  ") != std::string::npos) {
-                    vertexSS >> nIdx; // Формат v//vn
-                } else {
-                    vertexSS >> tIdx >> nIdx; // Формат v/vt/vn
+            // В OBJ индексы начинаются с 1, переводим в 0-based
+            unsigned int rawIndices[3] = { idx1 - 1, idx2 - 1, idx3 - 1 };
+
+            // Хэш-карта для отслеживания уникальных вершин
+            // Ключ: координаты вершины, Значение: её новый индекс в итоговом VBO
+            static std::unordered_map<glm::vec3, unsigned int> uniqueVertices;
+
+            for (int i = 0; i < 3; i++) {
+                glm::vec3 pos = temp_positions[rawIndices[i]];
+
+                // Если мы еще НЕ встречали вершину с такими координатами
+                if (uniqueVertices.count(pos) == 0) {
+                    uniqueVertices[pos] = static_cast<unsigned int>(outVertices.size());
+                    Vertex v;
+                    v.position = pos;
+                    v.normal = glm::vec3(0.0f); // Нормали посчитаем позже
+                    outVertices.push_back(v);
                 }
 
-                // В .obj индексация начинается с 1, переводим в базис С++ (с 0)
-                Vertex v;
-                v.position = temp_positions[vIdx - 1];
-                if (nIdx > 0 && nIdx <= temp_normals.size()) {
-                    v.normal = temp_normals[nIdx - 1];
-                } else {
-                    v.normal = glm::vec3(0.0f); // На случай, если нормалей в файле нет
-                }
-
-                out_vertices.push_back(v);
-                out_indices.push_back(out_indices.size());
+                // Добавляем индекс в индексный буфер (EBO)
+                outIndices.push_back(uniqueVertices[pos]);
             }
         }
     }
+
+    // 2. ТЕПЕРЬ, когда вершины гарантированно сшиты, считаем сглаженные нормали!
+    for (size_t i = 0; i < outIndices.size(); i += 3) {
+        unsigned int i0 = outIndices[i];
+        unsigned int i1 = outIndices[i + 1];
+        unsigned int i2 = outIndices[i + 2];
+
+        glm::vec3 edge1 = outVertices[i1].position - outVertices[i0].position;
+        glm::vec3 edge2 = outVertices[i2].position - outVertices[i0].position;
+        glm::vec3 faceNormal = glm::cross(edge1, edge2);
+
+        outVertices[i0].normal += faceNormal;
+        outVertices[i1].normal += faceNormal;
+        outVertices[i2].normal += faceNormal;
+    }
+
+    // 3. Нормализуем векторы
+    for (auto& v : outVertices) {
+        v.normal = glm::normalize(v.normal);
+    }
     return true;
-}
-
-void computeSmoothNormals(std::vector<Vertex>& vertices, const std::vector<unsigned int>& indices) {
-    // 1. Сбрасываем все нормали в 0
-    for (auto& v : vertices) {
-        v.normal = glm::vec3(0.0f);
-    }
-
-    // 2. Проходим по всем треугольникам сетки чайника
-    for (size_t i = 0; i < indices.size(); i += 3) {
-        unsigned int idx0 = indices[i];
-        unsigned int idx1 = indices[i + 1];
-        unsigned int idx2 = indices[i + 2];
-
-        glm::vec3 p0 = vertices[idx0].position;
-        glm::vec3 p1 = vertices[idx1].position;
-        glm::vec3 p2 = vertices[idx2].position;
-
-        // Вычисляем перпендикуляр к текущей грани (векторное произведение)
-        glm::vec3 edge1 = p1 - p0;
-        glm::vec3 edge2 = p2 - p0;
-        glm::vec3 faceNormal = glm::cross(edge1, edge2); 
-        // Примечание: нормализовать faceNormal здесь необязательно, 
-        // так как площадь треугольника сработает как естественный вес грани!
-
-        // Аккумулируем (суммируем) нормаль грани в каждую из трех её вершин
-        vertices[idx0].normal += faceNormal;
-        vertices[idx1].normal += faceNormal;
-        vertices[idx2].normal += faceNormal;
-    }
-
-    // 3. Нормализуем полученные векторы, чтобы сделать их единичной длины
-    for (auto& v : vertices) {
-        if (glm::length(v.normal) > 0.0f) {
-            v.normal = glm::normalize(v.normal);
-        }
-    }
 }
 
 int main() {
@@ -194,16 +167,22 @@ int main() {
     // Загрузка чайника
     std::vector<Vertex> vertices;
     std::vector<unsigned int> indices;
-    if (!loadOBJ("teapot.obj", vertices, indices)) {
+
+    if (!loadTeapotOBJ("teapot.obj", vertices, indices)) {
         std::cerr << "Поместите файл teapot.obj рядом с программой!" << std::endl;
         return -1;
     }
-    for(Vertex v : vertices){
-        std::cout << "vert position: " << glm::to_string(v.position) << " vert narmal: " << glm::to_string(v.normal) << std::endl;
-    }
 
-    computeSmoothNormals(vertices, indices);
+    // std::string filename{"vertex.txt"};
+    // std::fstream s{filename, s.trunc | s.out};
 
+    // if (!s.is_open())
+    //     std::cout << "failed to open " << filename << '\n';
+    // else
+    //     for(Vertex v : vertices){
+    //         s << "vert position: " << glm::to_string(v.position) << " vert normal: " << glm::to_string(v.normal) << std::endl;
+    //     }
+    
     // Буферы на GPU
     GLuint VAO, VBO, EBO;
     glGenVertexArrays(1, &VAO);
@@ -255,8 +234,6 @@ int main() {
     if (lightLoc == -1) std::cerr << "КРИТИЧЕСКАЯ ОШИБКА: lightPos не найден в шейдере!" << std::endl;
     if (camLoc == -1)   std::cerr << "КРИТИЧЕСКАЯ ОШИБКА: viewPos не найден в шейдере!" << std::endl;
 
-    std::cout << "projLoc: " << projLoc << " | lightLoc: " << lightLoc << " | camLoc: " << camLoc << std::endl;
-
     // Главный цикл рендеринга
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
@@ -267,8 +244,8 @@ int main() {
         // ВРЕМЯ И МАТЕМАТИКА ДВИЖЕНИЯ СВЕТА
         float time = glfwGetTime();
         // Свет летает по кругу в плоскости XZ с радиусом 3.5 и на высоте 2.0
-        // glm::vec3 lightPosition(sin(time) * 3.5f, 2.0f, cos(time) * 3.5f);
-        glm::vec3 lightPosition(sin(time) * 2.5f, 0.5f, cos(time) * 2.5f);
+        glm::vec3 lightPosition(sin(time) * 3.5f, 2.0f, cos(time) * 3.5f);
+        //  glm::vec3 lightPosition(sin(time) * 2.5f, 0.5f, cos(time) * 2.5f);
         // glm::vec3 cameraPosition(0.0f, 0.0f, 5.0f);
 
         // Общие матрицы проекции и вида
