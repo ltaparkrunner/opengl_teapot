@@ -1,7 +1,7 @@
-// #include <GL/glew.h>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
+#define GLM_ENABLE_EXPERIMENTAL
 // Подключаем GLM для удобной работы с матрицами 3D-трансформаций
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -14,6 +14,7 @@
 #include <string>
 
 #include "shader.h"
+#include <glm/gtx/string_cast.hpp>
 
 const GLuint WIDTH = 800, HEIGHT = 600;
 extern float lightCubeVertices[];
@@ -90,6 +91,43 @@ bool loadOBJ(const std::string& path, std::vector<Vertex>& out_vertices, std::ve
     return true;
 }
 
+void computeSmoothNormals(std::vector<Vertex>& vertices, const std::vector<unsigned int>& indices) {
+    // 1. Сбрасываем все нормали в 0
+    for (auto& v : vertices) {
+        v.normal = glm::vec3(0.0f);
+    }
+
+    // 2. Проходим по всем треугольникам сетки чайника
+    for (size_t i = 0; i < indices.size(); i += 3) {
+        unsigned int idx0 = indices[i];
+        unsigned int idx1 = indices[i + 1];
+        unsigned int idx2 = indices[i + 2];
+
+        glm::vec3 p0 = vertices[idx0].position;
+        glm::vec3 p1 = vertices[idx1].position;
+        glm::vec3 p2 = vertices[idx2].position;
+
+        // Вычисляем перпендикуляр к текущей грани (векторное произведение)
+        glm::vec3 edge1 = p1 - p0;
+        glm::vec3 edge2 = p2 - p0;
+        glm::vec3 faceNormal = glm::cross(edge1, edge2); 
+        // Примечание: нормализовать faceNormal здесь необязательно, 
+        // так как площадь треугольника сработает как естественный вес грани!
+
+        // Аккумулируем (суммируем) нормаль грани в каждую из трех её вершин
+        vertices[idx0].normal += faceNormal;
+        vertices[idx1].normal += faceNormal;
+        vertices[idx2].normal += faceNormal;
+    }
+
+    // 3. Нормализуем полученные векторы, чтобы сделать их единичной длины
+    for (auto& v : vertices) {
+        if (glm::length(v.normal) > 0.0f) {
+            v.normal = glm::normalize(v.normal);
+        }
+    }
+}
+
 int main() {
     if (!glfwInit()) return -1;
 
@@ -101,8 +139,6 @@ int main() {
     if (!window) { glfwTerminate(); return -1; }
     glfwMakeContextCurrent(window);
 
-    // glewExperimental = GL_TRUE;
-    // if (glewInit() != GLEW_OK) return -1;
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
     std::cerr << "Не удалось инициализировать GLAD" << std::endl;
     return -1;
@@ -162,6 +198,11 @@ int main() {
         std::cerr << "Поместите файл teapot.obj рядом с программой!" << std::endl;
         return -1;
     }
+    for(Vertex v : vertices){
+        std::cout << "vert position: " << glm::to_string(v.position) << " vert narmal: " << glm::to_string(v.normal) << std::endl;
+    }
+
+    computeSmoothNormals(vertices, indices);
 
     // Буферы на GPU
     GLuint VAO, VBO, EBO;
@@ -201,11 +242,6 @@ int main() {
     glEnableVertexAttribArray(0);
     glBindVertexArray(0);
 
-    // ID юниформ-переменных для матриц
-    // GLint modelLoc = glGetUniformLocation(shaderProgram, "model");
-    // GLint viewLoc  = glGetUniformLocation(shaderProgram, "view");
-    // GLint projLoc  = glGetUniformLocation(shaderProgram, "projection");
-
     float angle = 0.0f;
 
     // Вызываем строго ПОСЛЕ финальной линковки shaderProgram
@@ -219,6 +255,8 @@ int main() {
     if (lightLoc == -1) std::cerr << "КРИТИЧЕСКАЯ ОШИБКА: lightPos не найден в шейдере!" << std::endl;
     if (camLoc == -1)   std::cerr << "КРИТИЧЕСКАЯ ОШИБКА: viewPos не найден в шейдере!" << std::endl;
 
+    std::cout << "projLoc: " << projLoc << " | lightLoc: " << lightLoc << " | camLoc: " << camLoc << std::endl;
+
     // Главный цикл рендеринга
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
@@ -229,12 +267,9 @@ int main() {
         // ВРЕМЯ И МАТЕМАТИКА ДВИЖЕНИЯ СВЕТА
         float time = glfwGetTime();
         // Свет летает по кругу в плоскости XZ с радиусом 3.5 и на высоте 2.0
-        glm::vec3 lightPosition(sin(time) * 3.5f, 2.0f, cos(time) * 3.5f);
+        // glm::vec3 lightPosition(sin(time) * 3.5f, 2.0f, cos(time) * 3.5f);
+        glm::vec3 lightPosition(sin(time) * 2.5f, 0.5f, cos(time) * 2.5f);
         // glm::vec3 cameraPosition(0.0f, 0.0f, 5.0f);
-
-        // // Общие матрицы проекции и вида
-        // glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)WIDTH / (float)HEIGHT, 0.1f, 100.0f);
-        // glm::mat4 view = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -1.0f, -6.0f));
 
         // Общие матрицы проекции и вида
         glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)WIDTH / (float)HEIGHT, 0.1f, 100.0f);
@@ -245,19 +280,6 @@ int main() {
         // ==========================================
         // 1. ОТРИСОВКА ЧАЙНИКА (С ШЕЙДЕРОМ ФАРФОРА)
         // ==========================================
-        // glUseProgram(shaderProgram);
-
-        // // Передаем матрицы
-        // glm::mat4 modelTeapot = glm::rotate(glm::mat4(1.0f), glm::radians(angle), glm::vec3(0.0f, 1.0f, 0.0f));
-        // modelTeapot = glm::scale(modelTeapot, glm::vec3(0.5f)); 
-        
-        // glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
-        // glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "view"), 1, GL_FALSE, glm::value_ptr(view));
-        // glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, glm::value_ptr(modelTeapot));
-
-        // // Передаем динамические векторы света и камеры
-        // glUniform3fv(glGetUniformLocation(shaderProgram, "lightPos"), 1, glm::value_ptr(lightPosition));
-        // glUniform3fv(glGetUniformLocation(shaderProgram, "viewPos"), 1, glm::value_ptr(cameraPosition));
 
         glUseProgram(shaderProgram);
 
