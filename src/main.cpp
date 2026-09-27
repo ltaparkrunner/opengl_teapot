@@ -173,16 +173,6 @@ int main() {
         return -1;
     }
 
-    // std::string filename{"vertex.txt"};
-    // std::fstream s{filename, s.trunc | s.out};
-
-    // if (!s.is_open())
-    //     std::cout << "failed to open " << filename << '\n';
-    // else
-    //     for(Vertex v : vertices){
-    //         s << "vert position: " << glm::to_string(v.position) << " vert normal: " << glm::to_string(v.normal) << std::endl;
-    //     }
-    
     // Буферы на GPU
     GLuint VAO, VBO, EBO;
     glGenVertexArrays(1, &VAO);
@@ -224,15 +214,15 @@ int main() {
     float angle = 0.0f;
 
     // Вызываем строго ПОСЛЕ финальной линковки shaderProgram
-    GLint projLoc  = glGetUniformLocation(shaderProgram, "projection");
-    GLint viewLoc  = glGetUniformLocation(shaderProgram, "view");
-    GLint modelLoc = glGetUniformLocation(shaderProgram, "model");
-    GLint lightLoc = glGetUniformLocation(shaderProgram, "lightPos");
-    GLint camLoc   = glGetUniformLocation(shaderProgram, "viewPos");
+    // GLint projLoc  = glGetUniformLocation(shaderProgram, "projection");
+    // GLint viewLoc  = glGetUniformLocation(shaderProgram, "view");
+    // GLint modelLoc = glGetUniformLocation(shaderProgram, "model");
+    // GLint lightLoc = glGetUniformLocation(shaderProgram, "lightPos");
+    // GLint camLoc   = glGetUniformLocation(shaderProgram, "viewPos");
 
     // ВАЖНО: Добавим проверку. Если в консоль выведется ошибка — значит С++ не видит переменные в шейдере!
-    if (lightLoc == -1) std::cerr << "КРИТИЧЕСКАЯ ОШИБКА: lightPos не найден в шейдере!" << std::endl;
-    if (camLoc == -1)   std::cerr << "КРИТИЧЕСКАЯ ОШИБКА: viewPos не найден в шейдере!" << std::endl;
+    // if (lightLoc == -1) std::cerr << "КРИТИЧЕСКАЯ ОШИБКА: lightPos не найден в шейдере!" << std::endl;
+    // if (camLoc == -1)   std::cerr << "КРИТИЧЕСКАЯ ОШИБКА: viewPos не найден в шейдере!" << std::endl;
 
     // Главный цикл рендеринга
     while (!glfwWindowShouldClose(window)) {
@@ -264,13 +254,19 @@ int main() {
         glm::mat4 modelTeapot = glm::rotate(glm::mat4(1.0f), glm::radians(angle), glm::vec3(0.0f, 1.0f, 0.0f));
         modelTeapot = glm::scale(modelTeapot, glm::vec3(0.5f)); 
 
-        glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
-        glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(modelTeapot));
+        // glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
+        glUniformMatrix4fv(0, 1, GL_FALSE, glm::value_ptr(projection));
+        // glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+        glUniformMatrix4fv(1, 1, GL_FALSE, glm::value_ptr(view));
+        // glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(modelTeapot));
+        glUniformMatrix4fv(2, 1, GL_FALSE, glm::value_ptr(modelTeapot));
 
         // Передаем динамические векторы света и камеры
-        glUniform3fv(lightLoc, 1, glm::value_ptr(lightPosition));
-        glUniform3fv(camLoc, 1, glm::value_ptr(cameraPosition));
+        // glUniform3fv(lightLoc, 1, glm::value_ptr(lightPosition));
+        glUniform3fv(3, 1, glm::value_ptr(lightPosition));
+        // glUniform3fv(camLoc, 1, glm::value_ptr(cameraPosition));
+        glUniform3fv(4, 1, glm::value_ptr(cameraPosition));
+
         // Отрисовка
         glBindVertexArray(VAO);
         glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
@@ -283,9 +279,12 @@ int main() {
         // Матрица модели для куба: сдвигаем его в текущую точку lightPosition
         glm::mat4 modelLight = glm::translate(glm::mat4(1.0f), lightPosition);
 
-        glUniformMatrix4fv(glGetUniformLocation(lightShader, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
-        glUniformMatrix4fv(glGetUniformLocation(lightShader, "view"), 1, GL_FALSE, glm::value_ptr(view));
-        glUniformMatrix4fv(glGetUniformLocation(lightShader, "model"), 1, GL_FALSE, glm::value_ptr(modelLight));
+        // glUniformMatrix4fv(glGetUniformLocation(lightShader, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
+        glUniformMatrix4fv(0, 1, GL_FALSE, glm::value_ptr(projection));
+        // glUniformMatrix4fv(glGetUniformLocation(lightShader, "view"), 1, GL_FALSE, glm::value_ptr(view));
+        glUniformMatrix4fv(1, 1, GL_FALSE, glm::value_ptr(view));
+        // glUniformMatrix4fv(glGetUniformLocation(lightShader, "model"), 1, GL_FALSE, glm::value_ptr(modelLight));
+        glUniformMatrix4fv(2, 1, GL_FALSE, glm::value_ptr(modelLight));
 
         // Отрисовка куба (у него 36 вершин)
         glBindVertexArray(lightVAO);

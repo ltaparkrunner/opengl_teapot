@@ -4,8 +4,8 @@ out vec4 FragColor;
 in vec3 FragPos;
 in vec3 Normal;
 
-uniform vec3 lightPos;
-uniform vec3 viewPos;
+layout (location = 3) uniform vec3 lightPos;
+layout (location = 4) uniform vec3 viewPos;
 
 void main() {
     vec3 porcelainColor = vec3(0.92, 0.94, 0.96); 
